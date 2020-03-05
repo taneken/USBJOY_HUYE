@@ -169,9 +169,9 @@ protected:
         // [[ HORI Real Arcade Pro.V HAYABUSA(PS3 MODE) ------------------------------------------------------
         joydrv_snddata[port_no][3] = ps_udlr_data[byte(buf[2])&B00001111];
 
-        if(buf[0]&0x0004) // Aボタン (cross)
+        if(buf[0]&0x0002) // Aボタン (cross)
           joydrv_snddata[port_no][2] &= B11111110;
-        if(buf[0]&0x0002) // Bボタン (circle)
+        if(buf[0]&0x0004) // Bボタン (circle)
           joydrv_snddata[port_no][2] &= B11111101;
         if(buf[0]&0x0020) // R1ボタン
           joydrv_snddata[port_no][1] &= B11101111;
@@ -179,9 +179,9 @@ protected:
           joydrv_snddata[port_no][1] &= B11011111;
         if(buf[1]&0x0008) // R3ボタン
           joydrv_snddata[port_no][1] &= B10111111;
-        if(buf[0]&0x0008) // Xボタン (square)
+        if(buf[0]&0x0001) // Xボタン (square)
           joydrv_snddata[port_no][2] &= B11101111;
-        if(buf[0]&0x0001) // Yボタン (triangle)
+        if(buf[0]&0x0008) // Yボタン (triangle)
           joydrv_snddata[port_no][2] &= B11011111;
         if(buf[0]&0x0010) // L1ボタン
           joydrv_snddata[port_no][1] &= B11111110;
