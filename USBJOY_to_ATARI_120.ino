@@ -1,10 +1,11 @@
-// USBコントローラ -> ATARIインタフェース
+// USB controller -> ATARI ver 1.20
 // Copyright
 //   メインプログラム、コントローラタイプ(TYPE_PS4, TYPE_MDmini) :
 //     HUYE 2018-2020
 //   コントローラタイプ(TYPE_PSC, TYPE_RAP3, TYPE_RAP4, TYPE_SNES, TYPE_RETROFREAK) : 
 //     たねけん 2020
 //
+#include <EEPROM.h>
 #include <usbhid.h>
 #include <hiduniversal.h>
 #include <usbhub.h>
@@ -23,10 +24,12 @@
 #define AD_CNV_DATA1 64
 #define AD_CNV_DATA2 192
 
-#define IF_MODE_ATARI 7
-#define IF_MODE_CPSF  6
-#define IF_MODE_CYBER 5
-#define IF_MODE_JOYDRV 4
+#define IF_MODE_ATARI 0
+#define IF_MODE_CPSF  1
+#define IF_MODE_CYBER 2
+#define IF_MODE_JOYDRV 3
+
+#define MODE_CHG_TIME 3000 // 3秒
 
 #ifdef dobogusinclude
 #include <spi4teensy3.h>
@@ -48,12 +51,12 @@ const struct {
   {0x0f0d, 0x0066, TYPE_PS4},  // HORIPAD FPS+(PS4)
   {0x0f0d, 0x00ee, TYPE_PS4},  // HORI ワイヤードコントローラライト for PS4-102
   {0x0583, 0x2060, TYPE_SNES}, // iBUFFALO SNES CLASSIC USB GAMEPAD
-  {0x1345, 0x1040, TYPE_SNES}, // RetroFreak GAME CONTROLLER
+  {0x1345, 0x1030, TYPE_SNES}, // RetroFreak GAME CONTROLLER
   {0x0413, 0x502b, TYPE_RETROFREAK}, // RetroFreak CONTROLLER ADAPTER
-  {0x046d, 0xc219, TYPE_PS4},  // Logicool Wireless Gamepad F710
   {0, 0, -1} // データ終端
 };
 
+unsigned long mode_time;
 byte cnv_mode;
 volatile byte cyber_if_flg;
 volatile byte joydrv_if_flg;
@@ -115,23 +118,12 @@ protected:
       cnv_pointer++;
     }
 
-/*    Serial.print(VID, HEX);
+/*   Serial.print(VID, HEX);
     Serial.print(F(":"));
     Serial.print(PID, HEX);
     Serial.print(F(":"));
     Serial.println(buf[0], HEX);*/
 
-    // デバッグ用VID/PID buf[x]表示
-    char strString[256];
-    sprintf(strString, "VID:%04X PID:%04X cnv_pointer:%02X\t",VID,PID,cnv_pointer);
-    Serial.print(strString);
-    Serial.print(" ");
-    for (int i=0; i<len; i++ ) {
-      PrintHex<uint8_t > (buf[i], 0);
-      Serial.print(" ");
-    }
-    Serial.println("");
-    
     joydrv_snddata[port_no][0] = joydrv_snddata[port_no][1] = joydrv_snddata[port_no][2] = joydrv_snddata[port_no][3] = B11111111;
     joydrv_snddata[port_no][4] = joydrv_snddata[port_no][5] = joydrv_snddata[port_no][6] = joydrv_snddata[port_no][7] = B10000000;
     for(i=8;i<16;i++) joydrv_snddata[port_no][i] = 0;
@@ -235,22 +227,22 @@ protected:
         joydrv_snddata[port_no][5] = byte(buf[0]); // 左右アナログ
         joydrv_snddata[port_no][4] = byte(buf[1]); // 上下アナログ
 
-        if(buf[2]&0x0001) // Aボタン (circle)
-          joydrv_snddata[port_no][2] &= B11111110;
-        if(buf[2]&0x0002) // Bボタン (cross)
+        if(buf[2]&0x0001) // Aボタン
           joydrv_snddata[port_no][2] &= B11111101;
-        if(buf[2]&0x0004) // Xボタン (triangle)
-          joydrv_snddata[port_no][2] &= B11101111;
-        if(buf[2]&0x0008) // Yボタン (square)
+        if(buf[2]&0x0002) // Bボタン
+          joydrv_snddata[port_no][2] &= B11111110;
+        if(buf[2]&0x0004) // Xボタン
           joydrv_snddata[port_no][2] &= B11011111;
-        if(buf[2]&0x0010) // R1ボタン
-          joydrv_snddata[port_no][1] &= B11101111;
-        if(buf[2]&0x0020) // L1ボタン
+        if(buf[2]&0x0008) // Yボタン
+          joydrv_snddata[port_no][2] &= B11101111;
+        if(buf[2]&0x0010) // L1ボタン
           joydrv_snddata[port_no][1] &= B11111110;
-        if(buf[2]&0x0040) // STARTボタン
-          joydrv_snddata[port_no][0] &= B11111110;
-        if(buf[2]&0x0080) // SELECTボタン
+        if(buf[2]&0x0020) // R1ボタン
+          joydrv_snddata[port_no][1] &= B11101111;
+        if(buf[2]&0x0040) // SELECTボタン
           joydrv_snddata[port_no][0] &= B11111101;
+        if(buf[2]&0x0080) // STARTボタン
+          joydrv_snddata[port_no][0] &= B11111110;
 
         if(stick_ctrldata[port_no].flg_change)
           stick_ctrldata[port_no].flg_change = false;
@@ -259,7 +251,7 @@ protected:
       case TYPE_RETROFREAK:
         // レトロフリーク コントローラアダプター -------------------------------------------------------------
         switch(byte(buf[0])) {
-          case 1: // NES??
+          case 1: // NESは未確認
             joydrv_snddata[port_no][5] = byte(buf[1]); // 左右アナログ
             joydrv_snddata[port_no][4] = byte(buf[2]); // 上下アナログ
     
@@ -279,27 +271,27 @@ protected:
             joydrv_snddata[port_no][5] = byte(buf[1]); // 左右アナログ
             joydrv_snddata[port_no][4] = byte(buf[2]); // 上下アナログ
     
-            if(buf[3]&0x0001) // Aボタン
-              joydrv_snddata[port_no][2] &= B11111110;
-            if(buf[3]&0x0002) // Bボタン
+            if(buf[3]&0x0001) // Bボタン
               joydrv_snddata[port_no][2] &= B11111101;
-            if(buf[3]&0x0004) // Xボタン (triangle)
-              joydrv_snddata[port_no][2] &= B11101111;
-            if(buf[3]&0x0008) // Yボタン (square)
+            if(buf[3]&0x0002) // Aボタン
+              joydrv_snddata[port_no][2] &= B11111110;
+            if(buf[3]&0x0004) // Yボタン
               joydrv_snddata[port_no][2] &= B11011111;
-            if(buf[3]&0x0010) // R1ボタン
-              joydrv_snddata[port_no][1] &= B11101111;
-            if(buf[3]&0x0020) // L1ボタン
+            if(buf[3]&0x0008) // Xボタン
+              joydrv_snddata[port_no][2] &= B11101111;
+            if(buf[3]&0x0010) // L1ボタン
               joydrv_snddata[port_no][1] &= B11111110;
-            if(buf[3]&0x0040) // STARTボタン
-              joydrv_snddata[port_no][0] &= B11111110;
-            if(buf[3]&0x0080) // SELECTボタン
+            if(buf[3]&0x0020) // R1ボタン
+              joydrv_snddata[port_no][1] &= B11101111;
+            if(buf[3]&0x0040) // SELECTボタン
               joydrv_snddata[port_no][0] &= B11111101;
+            if(buf[3]&0x0080) // STARTボタン
+              joydrv_snddata[port_no][0] &= B11111110;
     
             if(stick_ctrldata[port_no].flg_change)
               stick_ctrldata[port_no].flg_change = false;
             break;
-          case 3: // MegaDrive 6button
+          case 3: // MegaDrive 6bは未確認
             joydrv_snddata[port_no][5] = byte(buf[1]); // 左右アナログ
             joydrv_snddata[port_no][4] = byte(buf[2]); // 上下アナログ
     
@@ -323,7 +315,7 @@ protected:
             if(stick_ctrldata[port_no].flg_change)
               stick_ctrldata[port_no].flg_change = false;
             break;
-          case 4: // PCE?? PCE 6bは??
+          case 4: // PCE2b PCE 6bは未確認
             joydrv_snddata[port_no][5] = byte(buf[1]); // 左右アナログ
             joydrv_snddata[port_no][4] = byte(buf[2]); // 上下アナログ
     
@@ -433,9 +425,8 @@ JoystickHID Hid4(&Usb);
 void setup() {
   int i,j;
 
-  PORTB |= B00000111;
-  cyber_if_flg = 0;
-  joydrv_if_flg = 0;
+  Serial.begin(115200);
+  while (!Serial);
 
   atari_data_SELL = atari_data_SELH = B11111111;
 
@@ -453,37 +444,83 @@ void setup() {
     stick_ctrldata[i].flg_change=false;
   }
 
-  cnv_mode = (PINB&B00000111);
+  cnv_mode = EEPROM.read(0);
+  if(cnv_mode > IF_MODE_JOYDRV) cnv_mode = IF_MODE_ATARI;
 
-  Serial.begin(115200);
-  while (!Serial);
+  set_cnv_mode();
+
   if (Usb.Init() == -1) {
     Serial.print(F("\r\nOSC did not start"));
     while (1);
   }
 
+  mode_time = millis();  /* 起動時の時間 */
+  cyber_if_flg = 0; /* 通信要求クリア */
+  joydrv_if_flg = 0; /* 通信要求クリア */
+}
+
+void set_cnv_mode()
+{
+  int i,j;
+
+  DDRB |= B00100000;
+  detachInterrupt(0);
   switch(cnv_mode) {
     case IF_MODE_ATARI:
+      for(i=0;i<2;i++) {
+        delay(600);
+        PORTB |= B00100000; // LED13 ON
+        delay(600);
+        PORTB &= B11011111; // LED13 OFF
+      }
+      DDRC = B00111111;
+      PORTC = B11111111;
+      attachInterrupt(0, int_cpsfatari, CHANGE);
+      break;
     case IF_MODE_CPSF:
-      DDRC |= B00111111;
+      for(i=0;i<2;i++) {
+        delay(800);
+        for(j=0;j<2;j++) {
+          delay(300);
+          PORTB |= B00100000; // LED13 ON
+          delay(300);
+          PORTB &= B11011111; // LED13 OFF
+        }
+      }
+      DDRC = B00111111;
       PORTC = B11111111;
       attachInterrupt(0, int_cpsfatari, CHANGE);
       break;
     case IF_MODE_CYBER:
-      DDRC |= B00111111;
+      for(i=0;i<2;i++) {
+        delay(800);
+        for(j=0;j<3;j++) {
+          delay(150);
+          PORTB |= B00100000; // LED13 ON
+          delay(150);
+          PORTB &= B11011111; // LED13 OFF
+        }
+      }
+      DDRC = B00111111;
       PORTC = B11111111;
       attachInterrupt(0, int_cyber, FALLING);
       break;
     case IF_MODE_JOYDRV:
-      DDRC |= B00001111;
+      for(i=0;i<2;i++) {
+        delay(800);
+        for(j=0;j<4;j++) {
+          delay(150);
+          PORTB |= B00100000; // LED13 ON
+          delay(150);
+          PORTB &= B11011111; // LED13 OFF
+        }
+      }
+      DDRC = B00001111;
       PORTC = B11111111;
       attachInterrupt(0, int_joydrv, FALLING);
       break;
   }
-  Serial.print(F("\r\nUSB controller -> ATARI ver 1.20\r\n"));
-
-  cyber_if_flg = 0; /* 起動時割込み誤検知防止 */
-  joydrv_if_flg = 0; /* 起動時割込み誤検知防止 */
+  DDRB &= B11011111;
 }
 
 void loop() {
@@ -506,9 +543,35 @@ void loop() {
   int motor2;
   byte atari_work_SELL;
   byte atari_work_SELH;
+  byte flg_chg_mode;
   int i;
+  unsigned long now_time;
 
   Usb.Task();
+
+  now_time = millis(); // 現在の起動からの時間
+  if(!(joydrv_snddata[0][0]&0x03)) { //SELECT + STARTボタン
+    if(!(joydrv_snddata[0][2]&0x01)) // Aボタン
+      flg_chg_mode = IF_MODE_ATARI;
+    else if(!(joydrv_snddata[0][2]&0x02)) // Bボタン
+      flg_chg_mode = IF_MODE_CPSF;
+    else if(!(joydrv_snddata[0][2]&0x10)) // Xボタン
+      flg_chg_mode = IF_MODE_CYBER;
+    else if(!(joydrv_snddata[0][2]&0x20)) // Yボタン
+      flg_chg_mode = IF_MODE_JOYDRV;
+    else mode_time = now_time;
+    if((now_time - mode_time) >= MODE_CHG_TIME) {
+      SPI.end();
+      cnv_mode = flg_chg_mode;
+      EEPROM.write(0, cnv_mode);
+      set_cnv_mode();
+      SPI.begin();
+      mode_time = now_time = millis(); // 現在の起動からの時間
+      cyber_if_flg = 0; /* 通信要求クリア */
+      joydrv_if_flg = 0; /* 通信要求クリア */
+    }
+  }
+  else mode_time = now_time;
 
   if (cyber_if_flg == 1) {
     for(i=0;i<12;i+=2) {
@@ -654,7 +717,7 @@ joydrvif_error:
       atari_work_SELH &= B11111011;
     if(!(joydrv_snddata[0][2]&0x20)) // Yボタン
       atari_work_SELH &= B11111101;
-    if(!(joydrv_snddata[0][1]&0x01) || !(joydrv_snddata[0][1]&0x20)) // L1ボタン,R2ボタン
+    if(!(joydrv_snddata[0][1]&0x01)) // L1ボタン
       atari_work_SELH &= B11101111;
     atari_data_SELL = atari_work_SELL;
     atari_data_SELH = atari_work_SELH;
