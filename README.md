@@ -13,11 +13,12 @@ D-SUB9ピンのATARIコントローラシールドはhuyeさんが専用基板�
 
 * arduino uno (ATmega328P 16MHz 5V)
 * arduino pro mini (ATmega328P 16MHz 5V)
+ 
 arduino正規品及び互換品にて稼働確認をしています。
 
 * https://www.amazon.co.jp/dp/B0168B39N4/ref=cm_sw_r_tw_dp_U_x_NGpBEbTA4ATH9
 * https://www.amazon.co.jp/dp/B01CX2AQEW/ref=cm_sw_r_tw_dp_U_x_ZDpBEbG9EBA4E
-
+ 
 pro miniのATmega168ではテストを行っておりません。
 pro miniは直接USBを接続しての書き込みが出来ないため、別途FT232RL等が必要になります。
 
