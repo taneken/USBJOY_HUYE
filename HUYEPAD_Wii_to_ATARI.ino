@@ -38,60 +38,22 @@ volatile byte joydrv_snddata[16];
  // 13: 右アナログボタン2
  // 14: 右アナログボタン3
  // 15: 右アナログボタン4
-volatile struct {
-  byte motor1;
-  byte motor2;
-  byte led_r;
-  byte led_g;
-  byte led_b;
-  byte flush_on;
-  byte flush_off;
-  bool flg_change;
-} stick_ctrldata;
-
-const byte ps_udlr_data[16] = {B11111110, B11110110, B11110111, B11110101, B11111101, B11111001, B11111011, B11111010,
-                               B11111111, B11111111, B11111111, B11111111, B11111111, B11111111, B11111111, B11111111};
-
-const byte psc_udlr_data[16] = {B11111010, B11111110, B11110110, B11111111, B11111011, B11111111, B11110111, B11111111,
-                                B11111001, B11111101, B11110101, B11111111, B11111111, B11111111, B11111111, B11111111};
 
 #define CLASSIC_BYTE_COUNT (6)
-
-struct ClassicController {
-  int8_t LeftX;
-  int8_t LeftY;
-  int8_t RightX;
-  int8_t RightY;
-  int8_t LeftT;
-  int8_t RightT;
-  boolean ButtonDown;
-  boolean ButtonLeft;
-  boolean ButtonUp;
-  boolean ButtonRight;
-  boolean ButtonSelect;
-  boolean ButtonHome;
-  boolean ButtonStart;
-  boolean ButtonY;
-  boolean ButtonX;
-  boolean ButtonA;
-  boolean ButtonB;
-  boolean ButtonL;
-  boolean ButtonR;
-  boolean ButtonZL;
-  boolean ButtonZR;
-};
 
 //void controller_decode_bytes(uint8_t *buf, size_t len, struct ClassicController *myStruct) {
 void controller_decode_bytes(uint8_t *buf, size_t len) {
 
-//  if ((buf == NULL) || (len < CLASSIC_BYTE_COUNT) || (myStruct == NULL)) {
-  if ((buf == NULL) || (len < CLASSIC_BYTE_COUNT)) {
-    return;
-  }
+  if ((buf == NULL) || (len < CLASSIC_BYTE_COUNT)) { return; }
+
 /*
+  Serial.print(buf[0]&B00011111,BIN);
+  Serial.print(" ");
+  Serial.println(buf[1]&B00011111,BIN);
+
   myStruct->LeftX = (buf[0] & (64 - 1)) - 32; // 0 to 63
   myStruct->LeftY = (buf[1] & (64 - 1)) - 32; // 0 to 63 -> -32 to 31
-
+  
   myStruct->RightX = (((buf[2] >> 7) & 1) + ((buf[1] >> 6) & 3) * 2 + ((buf[0] >> 6) & 3) * 8) - 16; // 0 to 31 -> -16 to 15
   myStruct->RightY = (buf[2] & (32 - 1)) - 16; // 0 to 31 -> -16 to 15
 
@@ -116,7 +78,6 @@ void controller_decode_bytes(uint8_t *buf, size_t len) {
 */
   int i;
   int d_pointer;
-  uint8_t w_buf[32];
 
   joydrv_snddata[0] = joydrv_snddata[1] = joydrv_snddata[2] = joydrv_snddata[3] = B11111111;
   joydrv_snddata[4] = joydrv_snddata[5] = joydrv_snddata[6] = joydrv_snddata[7] = B10000000;
@@ -165,22 +126,6 @@ void controller_decode_bytes(uint8_t *buf, size_t len) {
     joydrv_snddata[0] &= B11111110;
   if(!(buf[4] & (1 << 4))) // SELECTボタン
     joydrv_snddata[0] &= B11111101;
-
-  if(stick_ctrldata.flg_change) {
-    memset(w_buf, 0, sizeof(w_buf));
-    w_buf[0]  = 0x05;
-    w_buf[1]  = 0xFF;
-    w_buf[4]  = stick_ctrldata.motor2;
-    w_buf[5]  = stick_ctrldata.motor1;
-    w_buf[6]  = stick_ctrldata.led_r;
-    w_buf[7]  = stick_ctrldata.led_g;
-    w_buf[8]  = stick_ctrldata.led_b;
-    w_buf[9]  = stick_ctrldata.flush_on;
-    w_buf[10] = stick_ctrldata.flush_off;
-
-    stick_ctrldata.flg_change = false;
-    //SndRpt(sizeof(w_buf), w_buf);
-  }
 }
 
 void wire_write(uint8_t *buf, size_t len) {
@@ -220,14 +165,6 @@ void setup() {
   for(j=0;j<=3;j++) joydrv_snddata[j] = B11111111;
   for(j=4;j<=7;j++) joydrv_snddata[j] = B10000000;
   for(j=8;j<=15;j++) joydrv_snddata[j] = 0;
-  stick_ctrldata.motor1=0;
-  stick_ctrldata.motor2=0;
-  stick_ctrldata.led_r=0;
-  stick_ctrldata.led_g=0;
-  stick_ctrldata.led_b=0;
-  stick_ctrldata.flush_on=0;
-  stick_ctrldata.flush_off=0;
-  stick_ctrldata.flg_change=false;
 
   cnv_mode = EEPROM.read(0);
   if(cnv_mode > IF_MODE_JOYDRV) cnv_mode = IF_MODE_ATARI;
@@ -299,7 +236,6 @@ void set_cnv_mode()
       attachInterrupt(0, int_joydrv, FALLING);
       break;
   }
-/*  DDRB &= B11011111;*/
 }
 
 void loop() {
@@ -317,17 +253,16 @@ void loop() {
     //  9 : 右左右 下位4bit
     // 10 : A B A' B'
     // 11 : 1 1 1 1
+
   int joydrv_port;
-  int motor1;
-  int motor2;
   byte atari_work_SELL;
   byte atari_work_SELH;
   byte flg_chg_mode;
   int i;
   unsigned long now_time;
 
+/****************************************************************************/
   // put your main code here, to run repeatedly:
-  struct ClassicController Wii;
   uint8_t rawbytes[CLASSIC_BYTE_COUNT];    // array to store arduino output
   size_t cnt = 0;
 
@@ -337,10 +272,10 @@ void loop() {
   while (Wire.available()) {
     rawbytes[cnt++] = Wire.read();
   }
-
   // If we recieved the 6 bytes, then do something with them
   if (cnt >= CLASSIC_BYTE_COUNT) {
     controller_decode_bytes(rawbytes, cnt);
+/****************************************************************************/
 
     now_time = millis(); // 現在の起動からの時間
     if(!(joydrv_snddata[0]&0x03)) { //SELECT + STARTボタン
@@ -417,9 +352,16 @@ void loop() {
       PORTB = B11111111;
       cyber_if_flg = 0;
     }
+    /******************************* JOYDRV MODE *********************************/
     else if (joydrv_if_flg == 1) {
       joydrv_if_flg = 0;
   
+      joydrv_port = rcv_joydrv();
+    if(joydrv_port < 0) {
+      Serial.println(F("JOYDRV rcv ERROR1"));
+      goto joydrvif_error;
+    }
+
       /* PC本体側のBUSY終了待ち */
       for(i=0;i<JOYDRV_WAIT;i++) {
         if(PINB&B00010000) break;
@@ -551,7 +493,6 @@ int snd_joydrv(byte snd_data)
   long j;
 
   d_work = snd_data;
-
   for(i=0;i<4;i++) {
     if(d_work&B10000000) PORTB |= B00000010;
     else PORTB &= B11111101;
